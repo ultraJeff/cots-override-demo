@@ -1,0 +1,29 @@
+# SSA partial manifest — only these fields get merged into the existing Deployment.
+# Fixes the insecure securityContext so pods pass OpenShift SCC admission.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cots-frontend
+  namespace: cots-platform
+spec:
+  template:
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: frontend
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi

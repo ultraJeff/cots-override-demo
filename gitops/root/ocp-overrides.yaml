@@ -1,0 +1,36 @@
+# Applies OpenShift fixes via SSA to both:
+#   1. The child Application CRs (adds ignoreDifferences so child apps stop reverting fixes)
+#   2. The Deployments themselves (fixes securityContext to pass SCC)
+#
+# Deploys simultaneously with base-install (no sync waves) because the base
+# can never become healthy without these fixes. Retry handles the race where
+# target resources may not exist yet.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cots-ocp-overrides
+  namespace: openshift-gitops
+spec:
+  project: default
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: cots-platform
+  source:
+    repoURL: https://github.com/ultraJeff/cots-override-demo.git
+    targetRevision: main
+    path: gitops/overrides
+    directory:
+      recurse: true
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    retry:
+      limit: 10
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+    syncOptions:
+      - ServerSideApply=true
+      - Force=true

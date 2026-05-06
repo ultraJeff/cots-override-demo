@@ -1,0 +1,14 @@
+# Patches the vendor-created Application CR to add ignoreDifferences
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cots-api
+  namespace: openshift-gitops
+spec:
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/template/spec/securityContext
+        - /spec/template/spec/containers/0/securityContext
+        - /spec/template/spec/containers/0/resources

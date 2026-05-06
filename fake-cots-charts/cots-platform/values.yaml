@@ -1,0 +1,17 @@
+global:
+  repoURL: https://github.com/ultraJeff/cots-override-demo.git
+  targetRevision: main
+  namespace: cots-platform
+  argocdNamespace: openshift-gitops
+  releaseName: cots
+
+components:
+  frontend:
+    enabled: true
+    chartPath: fake-cots-charts/cots-frontend
+  api:
+    enabled: true
+    chartPath: fake-cots-charts/cots-api
+  worker:
+    enabled: true
+    chartPath: fake-cots-charts/cots-worker

@@ -1,0 +1,23 @@
+# Installs the vendor's parent Helm chart, which creates child ArgoCD Applications.
+# Those child apps deploy insecure Deployments that will fail SCC on OpenShift —
+# that's expected. The overrides app fixes them.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cots-base-install
+  namespace: openshift-gitops
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/ultraJeff/cots-override-demo.git
+    targetRevision: main
+    path: fake-cots-charts/cots-platform
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: openshift-gitops
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

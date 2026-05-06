@@ -1,0 +1,5 @@
+apiVersion: v2
+name: cots-api
+description: Fake COTS API server — intentionally insecure for demo purposes
+version: 1.0.0
+appVersion: "1.0.0"

@@ -1,0 +1,23 @@
+# Root app-of-apps — deploys the vendor platform and the OCP overrides simultaneously.
+# No sync waves — the vendor's child apps will fail SCC until the overrides land,
+# so we can't gate on health. Both apps start syncing at the same time.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cots-platform-root
+  namespace: openshift-gitops
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/ultraJeff/cots-override-demo.git
+    targetRevision: main
+    path: gitops/root
+    directory:
+      recurse: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: openshift-gitops
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
