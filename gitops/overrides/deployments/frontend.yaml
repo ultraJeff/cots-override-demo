@@ -16,14 +16,18 @@ spec:
     spec:
       securityContext:
         runAsNonRoot: true
+        runAsUser: null
+        runAsGroup: null
         seccompProfile:
           type: RuntimeDefault
       containers:
         - name: frontend
           securityContext:
+            privileged: false
             allowPrivilegeEscalation: false
             runAsNonRoot: true
             capabilities:
+              add: []
               drop:
                 - ALL
           resources:
