@@ -17,3 +17,6 @@ spec:
         - /spec/template/spec/securityContext
         - /spec/template/spec/containers/0/securityContext
         - /spec/template/spec/containers/0/resources
+  syncPolicy:
+    syncOptions:
+      - RespectIgnoreDifferences=true

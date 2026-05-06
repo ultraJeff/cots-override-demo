@@ -21,6 +21,7 @@ spec:
       kind: Application
       jsonPointers:
         - /spec/ignoreDifferences
+        - /spec/syncPolicy/syncOptions
   syncPolicy:
     automated:
       prune: true
