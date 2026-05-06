@@ -15,9 +15,16 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: openshift-gitops
+  # Let the overrides app own ignoreDifferences on the child Application CRs
+  ignoreDifferences:
+    - group: argoproj.io
+      kind: Application
+      jsonPointers:
+        - /spec/ignoreDifferences
   syncPolicy:
     automated:
       prune: true
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
+      - RespectIgnoreDifferences=true
