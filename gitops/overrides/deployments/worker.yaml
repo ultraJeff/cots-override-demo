@@ -4,7 +4,13 @@ metadata:
   name: cots-worker
   namespace: cots-platform
 spec:
+  selector:
+    matchLabels:
+      app: cots-worker
   template:
+    metadata:
+      labels:
+        app: cots-worker
     spec:
       securityContext:
         runAsNonRoot: true

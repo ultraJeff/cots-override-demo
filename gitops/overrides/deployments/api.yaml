@@ -4,7 +4,13 @@ metadata:
   name: cots-api
   namespace: cots-platform
 spec:
+  selector:
+    matchLabels:
+      app: cots-api
   template:
+    metadata:
+      labels:
+        app: cots-api
     spec:
       securityContext:
         runAsNonRoot: true

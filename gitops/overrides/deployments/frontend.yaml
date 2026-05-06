@@ -6,7 +6,13 @@ metadata:
   name: cots-frontend
   namespace: cots-platform
 spec:
+  selector:
+    matchLabels:
+      app: cots-frontend
   template:
+    metadata:
+      labels:
+        app: cots-frontend
     spec:
       securityContext:
         runAsNonRoot: true

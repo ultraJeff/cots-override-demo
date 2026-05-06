@@ -6,6 +6,10 @@ metadata:
   name: cots-frontend
   namespace: openshift-gitops
 spec:
+  project: default
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: cots-platform
   ignoreDifferences:
     - group: apps
       kind: Deployment
