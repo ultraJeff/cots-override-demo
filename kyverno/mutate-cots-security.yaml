@@ -1,0 +1,59 @@
+# Kyverno mutating policy — intercepts Deployments in the cots-platform
+# namespace and fixes their securityContext to pass OpenShift SCC.
+#
+# This runs as a webhook at admission time — the Deployment is fixed BEFORE
+# it's persisted, so pods never fail SCC. No SSA, no field ownership
+# fights, no ArgoCD sync issues.
+#
+# Uses JSON patch (RFC 6902) to both remove insecure fields and add secure
+# ones. Strategic merge can't remove existing fields reliably.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: mutate-cots-platform-security
+  annotations:
+    policies.kyverno.io/title: Fix COTS Platform Security Context
+    policies.kyverno.io/description: >-
+      Mutates Deployments in the cots-platform namespace to comply with
+      OpenShift's restricted-v2 SCC. Removes runAsUser: 0, disables
+      privilege escalation, drops all capabilities, and adds a seccomp profile.
+spec:
+  rules:
+    - name: fix-security-context
+      match:
+        any:
+          - resources:
+              kinds:
+                - Deployment
+              namespaces:
+                - cots-platform
+      mutate:
+        patchesJson6902: |-
+          # Pod securityContext — replace entirely
+          - op: replace
+            path: /spec/template/spec/securityContext
+            value:
+              runAsNonRoot: true
+              seccompProfile:
+                type: RuntimeDefault
+
+          # First container securityContext — replace entirely
+          - op: replace
+            path: /spec/template/spec/containers/0/securityContext
+            value:
+              allowPrivilegeEscalation: false
+              runAsNonRoot: true
+              capabilities:
+                drop:
+                  - ALL
+
+          # Add resources if missing, replace if present
+          - op: add
+            path: /spec/template/spec/containers/0/resources
+            value:
+              requests:
+                cpu: 100m
+                memory: 128Mi
+              limits:
+                cpu: 500m
+                memory: 256Mi
