@@ -6,6 +6,12 @@ metadata:
   namespace: openshift-gitops
 spec:
   project: default
+  source:
+    repoURL: https://github.com/ultraJeff/cots-override-demo.git
+    targetRevision: main
+    path: fake-cots-charts/cots-worker
+    helm:
+      releaseName: cots
   destination:
     server: https://kubernetes.default.svc
     namespace: cots-platform
