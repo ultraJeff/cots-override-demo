@@ -9,24 +9,21 @@ kind: Kustomization
 
 namespace: cots-platform
 
+helmGlobals:
+  chartHome: ../../fake-cots-charts
+
 helmCharts:
   - name: cots-frontend
-    repo: https://github.com/ultraJeff/cots-override-demo.git
-    version: 0.0.0
     releaseName: cots
     namespace: cots-platform
     valuesFile: values.yaml
 
   - name: cots-api
-    repo: https://github.com/ultraJeff/cots-override-demo.git
-    version: 0.0.0
     releaseName: cots
     namespace: cots-platform
     valuesFile: values.yaml
 
   - name: cots-worker
-    repo: https://github.com/ultraJeff/cots-override-demo.git
-    version: 0.0.0
     releaseName: cots
     namespace: cots-platform
     valuesFile: values.yaml
