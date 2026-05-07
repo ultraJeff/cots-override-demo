@@ -1,0 +1,26 @@
+# Kustomize Redirect: preserves vendor's app-of-apps topology
+#
+# Kustomize renders the vendor's parent Helm chart, JSON Patches the
+# rendered Application CRs to redirect each child app to our overlays.
+# The child overlays wrap the vendor child charts with Kustomize + JSON
+# Patch for securityContext fixes. No Kyverno needed.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cots-platform-kustomize-redirect
+  namespace: openshift-gitops
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/ultraJeff/cots-override-demo.git
+    targetRevision: main
+    path: kustomize-redirect
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: openshift-gitops
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

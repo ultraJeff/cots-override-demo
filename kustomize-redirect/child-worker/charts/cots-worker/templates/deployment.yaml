@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-worker
+  labels:
+    app: {{ .Release.Name }}-worker
+    app.kubernetes.io/part-of: cots-platform
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ .Release.Name }}-worker
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}-worker
+    spec:
+      # INSECURE: runs as root
+      securityContext:
+        runAsUser: 0
+        runAsGroup: 0
+      containers:
+        - name: worker
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/bin/sh", "-c", "while true; do echo 'processing...'; sleep 60; done"]
+          securityContext:
+            allowPrivilegeEscalation: true
+          resources: {}

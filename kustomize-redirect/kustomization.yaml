@@ -1,25 +1,25 @@
-# Renders the vendor's parent Helm chart via Kustomize, then JSON Patches
-# the Application CRs it produces to redirect child apps to our overlays.
+# Kustomize Redirect: renders the vendor's parent Helm chart, then JSON Patches
+# the Application CRs to redirect child apps to our overlays.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
 helmGlobals:
-  chartHome: ../../../../fake-cots-charts
+  chartHome: charts
 
 helmCharts:
   - name: cots-platform
+    version: 1.0.0
     releaseName: cots
     namespace: openshift-gitops
 
 patches:
-  # Redirect each child Application to our overlay instead of the raw chart
   - target:
       kind: Application
       name: cots-frontend
     patch: |
       - op: replace
         path: /spec/source/path
-        value: gitops/helm-with-kustomize-jsonpatch/child-overlays/frontend
+        value: kustomize-redirect/child-frontend
 
   - target:
       kind: Application
@@ -27,7 +27,7 @@ patches:
     patch: |
       - op: replace
         path: /spec/source/path
-        value: gitops/helm-with-kustomize-jsonpatch/child-overlays/api
+        value: kustomize-redirect/child-api
 
   - target:
       kind: Application
@@ -35,4 +35,4 @@ patches:
     patch: |
       - op: replace
         path: /spec/source/path
-        value: gitops/helm-with-kustomize-jsonpatch/child-overlays/worker
+        value: kustomize-redirect/child-worker

@@ -1,0 +1,5 @@
+apiVersion: v2
+name: cots-worker
+description: Fake COTS background worker — intentionally insecure for demo purposes
+version: 1.0.0
+appVersion: "1.0.0"

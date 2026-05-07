@@ -1,0 +1,28 @@
+{{- if .Values.components.frontend.enabled }}
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: {{ .Values.global.releaseName }}-frontend
+  namespace: {{ .Values.global.argocdNamespace }}
+  labels:
+    app.kubernetes.io/part-of: cots-platform
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: {{ .Values.global.repoURL }}
+    targetRevision: {{ .Values.global.targetRevision }}
+    path: {{ .Values.components.frontend.chartPath }}
+    helm:
+      releaseName: {{ .Values.global.releaseName }}
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: {{ .Values.global.namespace }}
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+{{- end }}

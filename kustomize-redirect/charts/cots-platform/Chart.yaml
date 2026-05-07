@@ -1,0 +1,5 @@
+apiVersion: v2
+name: cots-platform
+description: Fake COTS platform — deploys child apps via ArgoCD Applications
+version: 1.0.0
+appVersion: "1.0.0"

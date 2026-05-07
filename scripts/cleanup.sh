@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Tears down the COTS override demo so you can redeploy with a different method.
-# Cleans up both deployment methods. Safe to run multiple times.
+# Cleans up all deployment methods. Safe to run multiple times.
 #
 # Usage: ./scripts/cleanup.sh
 
@@ -9,15 +9,15 @@ set -euo pipefail
 
 echo "==> Deleting ArgoCD Applications..."
 
-# Method 1: App-of-apps + Kyverno
+# Kyverno method
 oc delete application cots-platform-root -n openshift-gitops --ignore-not-found
 oc delete application cots-ocp-overrides -n openshift-gitops --ignore-not-found
 
-# Method 2: Kustomize + JSON Patch
+# Kustomize direct
 oc delete application cots-platform-kustomize -n openshift-gitops --ignore-not-found
 
-# Method 3: Helm with Kustomize JSON Patch
-oc delete application cots-platform-helm-kustomize -n openshift-gitops --ignore-not-found
+# Kustomize redirect
+oc delete application cots-platform-kustomize-redirect -n openshift-gitops --ignore-not-found
 
 echo ""
 echo "==> Waiting for child Applications to be cleaned up..."
@@ -46,12 +46,12 @@ echo "==> Cleanup complete. Ready to redeploy."
 echo ""
 echo "Deployment methods:"
 echo ""
-echo "  Method 1 — App-of-apps + Kyverno (vendor chart creates child ArgoCD Applications):"
+echo "  Kyverno — vendor app-of-apps topology preserved, webhook fixes at admission:"
 echo "    oc apply -f kyverno/mutate-cots-security.yaml"
 echo "    oc apply -f gitops/root/appofapps.yaml"
 echo ""
-echo "  Method 2 — Kustomize + JSON Patch (single ArgoCD Application, no Kyverno):"
+echo "  Kustomize direct — single app, bypasses vendor topology:"
 echo "    oc apply -f gitops/kustomize-jsonpatch/argocd-application.yaml"
 echo ""
-echo "  Method 3 — Helm with Kustomize JSON Patch (multi-source, vendor topology preserved):"
-echo "    oc apply -f gitops/helm-with-kustomize-jsonpatch/argocd-application.yaml"
+echo "  Kustomize redirect — vendor topology preserved, child apps redirected to overlays:"
+echo "    oc apply -f gitops/kustomize-redirect/argocd-application.yaml"

@@ -4,10 +4,10 @@ kind: Kustomization
 namespace: cots-platform
 
 helmGlobals:
-  chartHome: ../../../../fake-cots-charts
+  chartHome: charts
 
 helmCharts:
-  - name: cots-worker
+  - name: cots-frontend
     releaseName: cots
     namespace: cots-platform
     valuesFile: values.yaml
@@ -15,7 +15,7 @@ helmCharts:
 patches:
   - target:
       kind: Deployment
-      name: cots-worker
+      name: cots-frontend
     patch: |
       - op: replace
         path: /spec/template/spec/securityContext

@@ -4,10 +4,10 @@ kind: Kustomization
 namespace: cots-platform
 
 helmGlobals:
-  chartHome: ../../../../fake-cots-charts
+  chartHome: charts
 
 helmCharts:
-  - name: cots-api
+  - name: cots-worker
     releaseName: cots
     namespace: cots-platform
     valuesFile: values.yaml
@@ -15,7 +15,7 @@ helmCharts:
 patches:
   - target:
       kind: Deployment
-      name: cots-api
+      name: cots-worker
     patch: |
       - op: replace
         path: /spec/template/spec/securityContext
@@ -35,8 +35,8 @@ patches:
         path: /spec/template/spec/containers/0/resources
         value:
           requests:
-            cpu: 250m
-            memory: 256Mi
+            cpu: 100m
+            memory: 128Mi
           limits:
-            cpu: "1"
-            memory: 512Mi
+            cpu: 500m
+            memory: 256Mi
