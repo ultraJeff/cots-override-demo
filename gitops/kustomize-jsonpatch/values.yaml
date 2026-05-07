@@ -1,0 +1,7 @@
+# Passthrough values — the chart's defaults are intentionally insecure.
+# The JSON patches in kustomization.yaml fix everything post-render.
+replicaCount: 1
+image:
+  repository: nginxinc/nginx-unprivileged
+  tag: latest
+  pullPolicy: Always

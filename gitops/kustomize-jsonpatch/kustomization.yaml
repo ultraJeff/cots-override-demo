@@ -1,0 +1,120 @@
+# Deployment Method 2: Kustomize with JSON Patch
+#
+# Pulls the three child Helm charts directly (no parent app-of-apps chart)
+# and applies JSON Patch to fix securityContext before ArgoCD applies to cluster.
+# Single ArgoCD Application, no Kyverno needed.
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: cots-platform
+
+helmCharts:
+  - name: cots-frontend
+    repo: https://github.com/ultraJeff/cots-override-demo.git
+    version: 0.0.0
+    releaseName: cots
+    namespace: cots-platform
+    valuesFile: values.yaml
+
+  - name: cots-api
+    repo: https://github.com/ultraJeff/cots-override-demo.git
+    version: 0.0.0
+    releaseName: cots
+    namespace: cots-platform
+    valuesFile: values.yaml
+
+  - name: cots-worker
+    repo: https://github.com/ultraJeff/cots-override-demo.git
+    version: 0.0.0
+    releaseName: cots
+    namespace: cots-platform
+    valuesFile: values.yaml
+
+patches:
+  # --- Frontend: replace entire securityContext objects ---
+  - target:
+      kind: Deployment
+      name: cots-frontend
+    patch: |
+      - op: replace
+        path: /spec/template/spec/securityContext
+        value:
+          runAsNonRoot: true
+          seccompProfile:
+            type: RuntimeDefault
+      - op: replace
+        path: /spec/template/spec/containers/0/securityContext
+        value:
+          allowPrivilegeEscalation: false
+          runAsNonRoot: true
+          capabilities:
+            drop:
+              - ALL
+      - op: add
+        path: /spec/template/spec/containers/0/resources
+        value:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+
+  # --- API: same treatment ---
+  - target:
+      kind: Deployment
+      name: cots-api
+    patch: |
+      - op: replace
+        path: /spec/template/spec/securityContext
+        value:
+          runAsNonRoot: true
+          seccompProfile:
+            type: RuntimeDefault
+      - op: replace
+        path: /spec/template/spec/containers/0/securityContext
+        value:
+          allowPrivilegeEscalation: false
+          runAsNonRoot: true
+          capabilities:
+            drop:
+              - ALL
+      - op: add
+        path: /spec/template/spec/containers/0/resources
+        value:
+          requests:
+            cpu: 250m
+            memory: 256Mi
+          limits:
+            cpu: "1"
+            memory: 512Mi
+
+  # --- Worker: same treatment ---
+  - target:
+      kind: Deployment
+      name: cots-worker
+    patch: |
+      - op: replace
+        path: /spec/template/spec/securityContext
+        value:
+          runAsNonRoot: true
+          seccompProfile:
+            type: RuntimeDefault
+      - op: replace
+        path: /spec/template/spec/containers/0/securityContext
+        value:
+          allowPrivilegeEscalation: false
+          runAsNonRoot: true
+          capabilities:
+            drop:
+              - ALL
+      - op: add
+        path: /spec/template/spec/containers/0/resources
+        value:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi

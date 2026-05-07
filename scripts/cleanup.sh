@@ -1,15 +1,20 @@
 #!/usr/bin/env bash
 #
-# Tears down the COTS override demo so you can redeploy with a different pattern.
-# Safe to run multiple times.
+# Tears down the COTS override demo so you can redeploy with a different method.
+# Cleans up both deployment methods. Safe to run multiple times.
 #
 # Usage: ./scripts/cleanup.sh
 
 set -euo pipefail
 
-echo "==> Deleting ArgoCD Applications (cascade deletes child resources)..."
+echo "==> Deleting ArgoCD Applications..."
+
+# Method 1: App-of-apps + Kyverno
 oc delete application cots-platform-root -n openshift-gitops --ignore-not-found
 oc delete application cots-ocp-overrides -n openshift-gitops --ignore-not-found
+
+# Method 2: Kustomize + JSON Patch
+oc delete application cots-platform-kustomize -n openshift-gitops --ignore-not-found
 
 echo ""
 echo "==> Waiting for child Applications to be cleaned up..."
@@ -36,6 +41,11 @@ oc get namespace cots-platform 2>/dev/null || echo "  (deleted)"
 echo ""
 echo "==> Cleanup complete. Ready to redeploy."
 echo ""
-echo "To redeploy:"
-echo "  1. Apply the Kyverno policy:  oc apply -f kyverno/mutate-cots-security.yaml"
-echo "  2. Deploy the app-of-apps:    oc apply -f gitops/root/appofapps.yaml"
+echo "Deployment methods:"
+echo ""
+echo "  Method 1 — App-of-apps + Kyverno (vendor chart creates child ArgoCD Applications):"
+echo "    oc apply -f kyverno/mutate-cots-security.yaml"
+echo "    oc apply -f gitops/root/appofapps.yaml"
+echo ""
+echo "  Method 2 — Kustomize + JSON Patch (single ArgoCD Application, no Kyverno):"
+echo "    oc apply -f gitops/kustomize-jsonpatch/argocd-application.yaml"

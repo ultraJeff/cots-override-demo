@@ -110,70 +110,96 @@ supports this cleanly.
 │   ├── cots-api/                  # Child chart — insecure Deployment + Service
 │   └── cots-worker/               # Child chart — insecure Deployment
 │
-├── kyverno/                       # ✅ THE WORKING SOLUTION
+├── kyverno/                       # Method 1: Kyverno mutating webhook
 │   └── mutate-cots-security.yaml  # ClusterPolicy with JSON Patch rules
 │
-└── gitops/                        # SSA approach (preserved for reference)
-    ├── root/
-    │   ├── appofapps.yaml
-    │   ├── base-install.yaml
-    │   └── ocp-overrides.yaml
-    └── overrides/
-        ├── applications/
-        └── deployments/
+├── gitops/
+│   ├── root/                      # Method 1: App-of-apps (used with Kyverno)
+│   │   ├── appofapps.yaml
+│   │   └── base-install.yaml
+│   └── kustomize-jsonpatch/       # Method 2: Kustomize + JSON Patch
+│       ├── argocd-application.yaml
+│       ├── kustomization.yaml
+│       └── values.yaml
+│
+├── gitops-ssa-archive/            # SSA approach (preserved for reference, not deployed)
+│
+└── scripts/
+    └── cleanup.sh                 # Tears down either method for redeployment
 ```
 
-## Usage
+---
 
-### Prerequisites
+## Deployment methods
 
-- OpenShift 4.16+ cluster with OpenShift GitOps installed
-- Kyverno installed (`helm install kyverno kyverno/kyverno -n kyverno --create-namespace`)
-- On OpenShift, grant Kyverno's service accounts the `nonroot-v2` SCC
-- `oc` CLI logged in as cluster-admin
+Both methods fix the same insecure vendor charts. Run `./scripts/cleanup.sh`
+between methods to start fresh.
 
-### Deploy
+### Method 1: App-of-apps + Kyverno
+
+Use this when the vendor's Helm chart creates child ArgoCD Applications that
+independently deploy their own charts. You can't put Kustomize between the
+vendor chart and the cluster, so Kyverno intercepts at admission.
+
+**Prerequisites:** Kyverno installed on the cluster.
 
 ```bash
-# 1. Apply the Kyverno policy
-oc apply -f kyverno/mutate-cots-security.yaml
+# Install Kyverno (one-time)
+helm install kyverno kyverno/kyverno -n kyverno --create-namespace
+# On OpenShift, grant nonroot-v2 SCC to Kyverno service accounts
+for sa in admission-controller background-controller cleanup-controller reports-controller; do
+  oc adm policy add-scc-to-user nonroot-v2 -z kyverno-${sa} -n kyverno
+done
+oc rollout restart deployment -n kyverno
 
-# 2. Deploy the app-of-apps
+# Deploy
+oc apply -f kyverno/mutate-cots-security.yaml
 oc apply -f gitops/root/appofapps.yaml
 ```
 
-### Expected behavior
-
-1. `cots-base-install` syncs → creates three child Application CRs
+**What happens:**
+1. Root app creates `cots-base-install` → vendor parent chart renders child Application CRs
 2. Child apps sync → ArgoCD creates Deployments
 3. Kyverno intercepts each Deployment at admission → JSON Patch replaces securityContext
-4. Deployments are persisted with correct spec → pods pass SCC → Running
+4. Deployments are persisted already fixed → pods pass SCC → Running
 5. Child apps show **Synced + Healthy** immediately
 
-### Clean up
+### Method 2: Kustomize + JSON Patch
+
+Use this when you can put Kustomize in front of the Helm charts. A single ArgoCD
+Application pulls all three child charts via Kustomize's `helmCharts` field,
+applies JSON Patch to the rendered output, and ArgoCD applies the fixed manifests.
+No Kyverno, no app-of-apps.
+
+```bash
+oc apply -f gitops/kustomize-jsonpatch/argocd-application.yaml
+```
+
+**What happens:**
+1. ArgoCD sees a Kustomize source → Kustomize renders the three Helm charts
+2. JSON Patches replace securityContext in the rendered output
+3. ArgoCD applies the already-fixed Deployments → pods pass SCC → Running
+4. Single Application shows **Synced + Healthy**
+
+### Clean up (either method)
 
 ```bash
 ./scripts/cleanup.sh
 ```
 
-## Related: Kustomize with JSON Patch (single-chart scenario)
+---
 
-If your COTS app is a single Helm chart (not an app-of-apps that renders child
-Applications), you don't need Kyverno. Kustomize can apply JSON Patch directly
-to Helm-rendered output before ArgoCD applies it.
+## When to use which method
 
-See [Approach 4: Kustomize with Helm + JSON Patch](https://github.com/ultraJeff/cots-gitops-patterns/tree/main/kustomize-with-helm-jsonpatch)
-in the `cots-gitops-patterns` repo for this pattern.
-
-The key insight is the same: **strategic merge patches can't remove fields** like
-`runAsUser: 0` or `capabilities.add`. JSON Patch (RFC 6902) `replace` and `remove`
-operations can. The difference is where the patch runs:
-
-| Scenario | Tool | When patch runs |
+| | Method 1: Kyverno | Method 2: Kustomize JSON Patch |
 |---|---|---|
-| Single Helm chart, Kustomize renders it | Kustomize `patchesJson6902` | Before ArgoCD applies to cluster |
-| App-of-apps, vendor chart creates child Applications | Kyverno ClusterPolicy | At admission, when each Deployment is created |
+| Vendor deploys via | App-of-apps (chart creates ArgoCD Applications) | Direct Helm charts you control |
+| Patch runs | At admission (webhook) | Before apply (Kustomize render) |
+| Requires Kyverno | Yes | No |
+| ArgoCD Applications | Multiple (root + base + 3 children) | One |
+| Complexity | More infrastructure | Simpler |
+| Best for | Vendor controls the deployment topology | You control the deployment topology |
 
-Both use JSON Patch. Kustomize is simpler when you can use it. Kyverno is needed
-when you can't — like when the vendor's parent chart creates ArgoCD Applications
-that independently deploy child charts, and you have no Kustomize layer in between.
+Both use JSON Patch (RFC 6902). The difference is where in the pipeline it runs.
+See also [Approach 4](https://github.com/ultraJeff/cots-gitops-patterns/tree/main/kustomize-with-helm-jsonpatch)
+in the `cots-gitops-patterns` repo for a standalone version of Method 2.

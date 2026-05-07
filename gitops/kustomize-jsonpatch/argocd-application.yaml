@@ -1,0 +1,23 @@
+# Deployment Method 2: Single ArgoCD Application with Kustomize + JSON Patch
+# No app-of-apps, no Kyverno — Kustomize renders the Helm charts and patches
+# the output before ArgoCD applies it.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cots-platform-kustomize
+  namespace: openshift-gitops
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/ultraJeff/cots-override-demo.git
+    targetRevision: main
+    path: gitops/kustomize-jsonpatch
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: cots-platform
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
