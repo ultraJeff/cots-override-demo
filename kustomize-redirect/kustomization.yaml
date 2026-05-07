@@ -13,6 +13,8 @@ helmCharts:
     namespace: openshift-gitops
 
 patches:
+  # Redirect each child Application to our Kustomize overlay and remove the
+  # helm config so ArgoCD detects the source as Kustomize (not Helm)
   - target:
       kind: Application
       name: cots-frontend
@@ -20,6 +22,8 @@ patches:
       - op: replace
         path: /spec/source/path
         value: kustomize-redirect/child-frontend
+      - op: remove
+        path: /spec/source/helm
 
   - target:
       kind: Application
@@ -28,6 +32,8 @@ patches:
       - op: replace
         path: /spec/source/path
         value: kustomize-redirect/child-api
+      - op: remove
+        path: /spec/source/helm
 
   - target:
       kind: Application
@@ -36,3 +42,5 @@ patches:
       - op: replace
         path: /spec/source/path
         value: kustomize-redirect/child-worker
+      - op: remove
+        path: /spec/source/helm
