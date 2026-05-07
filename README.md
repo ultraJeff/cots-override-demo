@@ -3,7 +3,8 @@
 A working demo of deploying an insecure COTS application on OpenShift and fixing
 it — without modifying the vendor's Helm charts.
 
-This repo documents two approaches we tested, what worked, and what didn't.
+This repo documents three working approaches, one failed approach (SSA), and the
+reasoning behind each.
 
 ## The problem
 
@@ -24,182 +25,200 @@ You can't modify the vendor charts. You need to fix the rendered resources.
 | No `seccompProfile` | Pod securityContext | SCC rejects the pod |
 | No resource requests/limits | Container spec | Quota enforcement fails |
 
----
+## Why JSON Patch (not strategic merge or SSA)
 
-## Approach 1: SSA overrides via ArgoCD (what we tried first)
-
-A second ArgoCD Application applies partial manifests via Server-Side Apply to
-fix the security context after the vendor charts deploy.
-
-### Why it doesn't work well
-
-SSA **merges** fields — it can't **remove** existing ones. When the vendor chart
-sets `runAsUser: 0`, SSA can add `runAsNonRoot: true` alongside it, but can't
-remove `runAsUser: 0`. You end up with both, and SCC still rejects the pod.
-
-Even after working around that (setting fields to `null`), we hit a cascade of
-ArgoCD-specific problems:
-
-| Problem | Root cause |
-|---|---|
-| Shared resource errors | ArgoCD won't let two Applications manage the same resource without `annotation` tracking |
-| Partial manifests fail validation | ArgoCD treats overrides as desired state, so missing required fields (selector, image) cause validation errors |
-| Child apps revert fixes | `selfHeal` re-syncs the Helm values, wiping SSA changes within seconds |
-| `ignoreDifferences` not respected | Requires `RespectIgnoreDifferences=true` in syncOptions, which the vendor chart doesn't set |
-| Sync wave deadlock | Can't use sync waves because the base install never becomes healthy without the fix |
-
-The SSA approach eventually works, but requires: annotation-based tracking, full
-required fields in every partial manifest, `ignoreDifferences` on the child apps,
-`RespectIgnoreDifferences=true` via SSA on the Application CRs, retry with backoff,
-and `null`/`[]` sentinels to remove fields. It's fragile and hard to maintain.
-
-The SSA manifests are preserved in `gitops/` for reference.
-
----
-
-## Approach 2: Kyverno mutating webhook (what works)
-
-A Kyverno `ClusterPolicy` intercepts Deployments at admission time and uses
-JSON Patch (RFC 6902) to **replace** the insecure securityContext before the
-resource is persisted. The Deployment lands on the cluster already fixed.
-
-```
-Vendor Helm Chart
-  └── ArgoCD creates Deployment
-        └── Kyverno webhook intercepts at admission
-              └── JSON Patch replaces securityContext
-                    └── Deployment persisted with correct spec
-                          └── Pods pass SCC ✓
-                                └── ArgoCD sees Synced + Healthy ✓
-```
-
-### Why this works
-
-| SSA problem | Kyverno solution |
-|---|---|
-| Can't remove fields | JSON Patch `replace` overwrites the entire securityContext |
-| ArgoCD shared resource conflicts | No second Application — Kyverno is a webhook, not an ArgoCD app |
-| Child apps revert fixes | Nothing to revert — the Deployment was correct from the start |
-| Sync wave deadlock | No deadlock — pods pass SCC on first attempt |
-| ArgoCD OutOfSync drift | No drift — ArgoCD's desired state matches live state (Kyverno mutated before persist) |
-
-### Why JSON Patch over Strategic Merge
+All three working methods use JSON Patch (RFC 6902). This is not a style choice —
+it's the only patching primitive that can **remove** fields.
 
 | Operation | Strategic Merge / SSA | JSON Patch (RFC 6902) |
 |---|---|---|
-| Add a field | ✓ | ✓ |
-| Update a field | ✓ | ✓ |
-| Remove a field | ✗ (merge only adds) | ✓ (`remove` or `replace` parent) |
-| Replace an entire object | ✗ | ✓ (`replace`) |
+| Add a field | Yes | Yes |
+| Update a field | Yes | Yes |
+| Remove a field | No (merge only adds) | Yes (`remove` or `replace` parent) |
+| Replace an entire object | No | Yes (`replace`) |
 
-When fixing insecure COTS charts, you almost always need to **remove** fields
-(`runAsUser: 0`, `capabilities.add`). JSON Patch is the only primitive that
-supports this cleanly.
-
-## Project structure
-
-```
-├── fake-cots-charts/              # Simulates vendor-provided Helm charts
-│   ├── cots-platform/             # Parent chart — creates child ArgoCD Applications
-│   │   └── templates/
-│   │       ├── namespace.yaml
-│   │       ├── app-frontend.yaml  # Renders an ArgoCD Application CR
-│   │       ├── app-api.yaml
-│   │       └── app-worker.yaml
-│   ├── cots-frontend/             # Child chart — insecure Deployment + Service
-│   ├── cots-api/                  # Child chart — insecure Deployment + Service
-│   └── cots-worker/               # Child chart — insecure Deployment
-│
-├── kyverno/                       # Method 1: Kyverno mutating webhook
-│   └── mutate-cots-security.yaml  # ClusterPolicy with JSON Patch rules
-│
-├── gitops/
-│   ├── root/                      # Method 1: App-of-apps (used with Kyverno)
-│   │   ├── appofapps.yaml
-│   │   └── base-install.yaml
-│   └── kustomize-jsonpatch/       # Method 2: Kustomize + JSON Patch
-│       ├── argocd-application.yaml
-│       ├── kustomization.yaml
-│       └── values.yaml
-│
-├── gitops-ssa-archive/            # SSA approach (preserved for reference, not deployed)
-│
-└── scripts/
-    └── cleanup.sh                 # Tears down either method for redeployment
-```
+When a vendor chart sets `runAsUser: 0`, strategic merge can add `runAsNonRoot: true`
+alongside it but can't remove `runAsUser: 0`. You end up with both, and SCC still
+rejects the pod. JSON Patch's `replace` operation overwrites the entire
+`securityContext` object — the insecure fields are gone, not overridden.
 
 ---
 
-## Deployment methods
+## Three deployment methods
 
-Both methods fix the same insecure vendor charts. Run `./scripts/cleanup.sh`
-between methods to start fresh.
+All three fix the same insecure vendor charts. Run `./scripts/cleanup.sh` between
+methods to start fresh.
 
-### Method 1: App-of-apps + Kyverno
+### Kyverno — mutating webhook
 
-Use this when the vendor's Helm chart creates child ArgoCD Applications that
-independently deploy their own charts. You can't put Kustomize between the
-vendor chart and the cluster, so Kyverno intercepts at admission.
+The recommended approach when the vendor controls the deployment topology
+(parent chart creates child ArgoCD Applications).
 
-**Prerequisites:** Kyverno installed on the cluster.
+A Kyverno `ClusterPolicy` intercepts Deployments at admission time and uses
+JSON Patch to replace the insecure securityContext before the resource is
+persisted. The vendor's app-of-apps topology is completely untouched.
+
+```
+Vendor Parent Chart
+  └── creates child ArgoCD Applications
+        └── child apps create Deployments
+              └── Kyverno intercepts at admission
+                    └── JSON Patch replaces securityContext
+                          └── Deployment persisted already fixed → pods pass SCC
+```
+
+**Strengths:**
+- Vendor topology completely preserved
+- Automatically covers new components the vendor adds (policy matches by namespace)
+- No knowledge of vendor chart internals required
+- No chart duplication
+
+**Tradeoffs:**
+- Requires Kyverno on the cluster
+- Child apps show OutOfSync (live state differs from Helm-rendered state due to mutation)
 
 ```bash
-# Install Kyverno (one-time)
-helm install kyverno kyverno/kyverno -n kyverno --create-namespace
-# On OpenShift, grant nonroot-v2 SCC to Kyverno service accounts
-for sa in admission-controller background-controller cleanup-controller reports-controller; do
-  oc adm policy add-scc-to-user nonroot-v2 -z kyverno-${sa} -n kyverno
-done
-oc rollout restart deployment -n kyverno
-
-# Deploy
 oc apply -f kyverno/mutate-cots-security.yaml
 oc apply -f gitops/root/appofapps.yaml
 ```
 
-**What happens:**
-1. Root app creates `cots-base-install` → vendor parent chart renders child Application CRs
-2. Child apps sync → ArgoCD creates Deployments
-3. Kyverno intercepts each Deployment at admission → JSON Patch replaces securityContext
-4. Deployments are persisted already fixed → pods pass SCC → Running
-5. Child apps show **Synced + Healthy** immediately
+### Kustomize direct — single app, bypass vendor topology
 
-### Method 2: Kustomize + JSON Patch
+The simplest approach when you can pull the child charts yourself and don't need
+the vendor's app-of-apps structure.
 
-Use this when you can put Kustomize in front of the Helm charts. A single ArgoCD
-Application pulls all three child charts via Kustomize's `helmCharts` field,
-applies JSON Patch to the rendered output, and ArgoCD applies the fixed manifests.
-No Kyverno, no app-of-apps.
+A single ArgoCD Application uses Kustomize's `helmCharts` field to render all
+three child charts, applies JSON Patch to the output, and ArgoCD applies the
+fixed manifests. No app-of-apps, no Kyverno.
+
+**Strengths:**
+- Simplest setup — one Application, one kustomization.yaml
+- All apps show Synced + Healthy (no drift)
+- No external tools required
+
+**Tradeoffs:**
+- Bypasses the vendor's deployment topology entirely
+- You must know which child charts to pull and how they're configured
+- Vendor updates require manual tracking
 
 ```bash
 oc apply -f gitops/kustomize-jsonpatch/argocd-application.yaml
 ```
 
-**What happens:**
-1. ArgoCD sees a Kustomize source → Kustomize renders the three Helm charts
-2. JSON Patches replace securityContext in the rendered output
-3. ArgoCD applies the already-fixed Deployments → pods pass SCC → Running
-4. Single Application shows **Synced + Healthy**
+### Kustomize redirect — vendor topology preserved, child apps redirected
 
-### Clean up (either method)
+A pure-Kustomize approach that preserves the vendor's app-of-apps topology.
+Kustomize renders the vendor's parent chart, JSON Patches the Application CRs
+to redirect each child app to a Kustomize overlay, and each overlay wraps the
+child chart with JSON Patch fixes.
+
+```
+Vendor Parent Chart (rendered by Kustomize)
+  └── Application CRs get JSON Patched:
+        - spec.source.path → our overlay
+        - spec.source.helm → removed (so ArgoCD detects Kustomize)
+        └── child apps now point at our overlays
+              └── each overlay renders the child chart + JSON Patch
+                    └── Deployments are fixed before apply → pods pass SCC
+```
+
+**Strengths:**
+- No Kyverno required
+- Preserves vendor's app-of-apps structure
+- All apps show Synced + Healthy (no drift)
+
+**Tradeoffs:**
+- Open-heart surgery — you're reverse-engineering the vendor's topology
+- Requires a copy of each vendor chart inside your overlay directories
+  (Kustomize's security sandbox won't allow `chartHome` to reference parent directories;
+  in production you'd use `helmCharts.repo` pointing at the vendor's Helm registry instead)
+- If the vendor adds components, renames charts, or restructures, your redirects break
+- Most complex to set up and maintain
 
 ```bash
-./scripts/cleanup.sh
+oc apply -f gitops/kustomize-redirect/argocd-application.yaml
 ```
 
 ---
 
-## When to use which method
+## Which method should I use?
 
-| | Method 1: Kyverno | Method 2: Kustomize JSON Patch |
-|---|---|---|
-| Vendor deploys via | App-of-apps (chart creates ArgoCD Applications) | Direct Helm charts you control |
-| Patch runs | At admission (webhook) | Before apply (Kustomize render) |
-| Requires Kyverno | Yes | No |
-| ArgoCD Applications | Multiple (root + base + 3 children) | One |
-| Complexity | More infrastructure | Simpler |
-| Best for | Vendor controls the deployment topology | You control the deployment topology |
+| | Kyverno | Kustomize direct | Kustomize redirect |
+|---|---|---|---|
+| Vendor topology preserved | Yes | No | Yes |
+| Requires Kyverno | Yes | No | No |
+| ArgoCD Applications | Multiple (vendor's) | One | Multiple (vendor's, redirected) |
+| Vendor adds a component | Auto-covered by policy | Must add manually | Must add manually |
+| Chart duplication | None | None | Yes (sandbox constraint) |
+| ArgoCD sync status | OutOfSync (mutation drift) | Synced | Synced |
+| Maintenance burden | Low | Medium | High |
+| Best for | Production | Simple/dev environments | Teams that can't install Kyverno |
 
-Both use JSON Patch (RFC 6902). The difference is where in the pipeline it runs.
-See also [Approach 4](https://github.com/ultraJeff/cots-gitops-patterns/tree/main/kustomize-with-helm-jsonpatch)
-in the `cots-gitops-patterns` repo for a standalone version of Method 2.
+**Recommendation:** Use **Kyverno** in production. It's the lowest maintenance, handles
+vendor changes gracefully, and doesn't require knowledge of the vendor's chart internals.
+Use **Kustomize direct** for simple cases where you control the charts. Use **Kustomize
+redirect** only if you need to preserve the vendor topology and can't install Kyverno.
+
+---
+
+## What we tried and abandoned: SSA overrides
+
+Before finding the JSON Patch approaches, we tried using a second ArgoCD Application
+with Server-Side Apply to patch Deployments after the vendor charts deployed.
+
+SSA merges fields but can't remove them. Even after workarounds (`null` sentinels,
+`capabilities.add: []`), we hit a cascade of ArgoCD-specific problems:
+
+| Problem | Root cause |
+|---|---|
+| Shared resource errors | ArgoCD won't let two Applications manage the same resource without `annotation` tracking |
+| Partial manifests fail validation | ArgoCD treats overrides as desired state — missing required fields (selector, image) cause errors |
+| Child apps revert fixes | `selfHeal` re-syncs Helm values, wiping SSA changes within seconds |
+| `ignoreDifferences` not respected | Requires `RespectIgnoreDifferences=true` in syncOptions, which the vendor chart doesn't set |
+| Sync wave deadlock | Can't gate on health because the base install can never be healthy without the fix |
+
+The SSA manifests are preserved in `gitops-ssa-archive/` for reference.
+
+---
+
+## Project structure
+
+```
+├── fake-cots-charts/                  # Simulates vendor-provided Helm charts
+│   ├── cots-platform/                 # Parent chart — creates child ArgoCD Applications
+│   ├── cots-frontend/                 # Child chart — insecure Deployment + Service
+│   ├── cots-api/                      # Child chart — insecure Deployment + Service
+│   └── cots-worker/                   # Child chart — insecure Deployment
+│
+├── kyverno/                           # Kyverno method
+│   └── mutate-cots-security.yaml      # ClusterPolicy with JSON Patch rules
+│
+├── gitops/
+│   ├── root/                          # Kyverno method: app-of-apps
+│   │   ├── appofapps.yaml
+│   │   └── base-install.yaml
+│   ├── kustomize-jsonpatch/           # Kustomize direct method
+│   │   ├── argocd-application.yaml
+│   │   ├── kustomization.yaml
+│   │   └── values.yaml
+│   └── kustomize-redirect/            # Kustomize redirect method
+│       └── argocd-application.yaml
+│
+├── kustomize-redirect/                # Kustomize redirect: parent + child overlays
+│   ├── kustomization.yaml             # Renders parent chart, patches Application CRs
+│   ├── charts/                        # Copy of vendor parent chart
+│   ├── child-frontend/                # Overlay: renders + patches frontend chart
+│   ├── child-api/                     # Overlay: renders + patches API chart
+│   └── child-worker/                  # Overlay: renders + patches worker chart
+│
+├── gitops-ssa-archive/                # SSA approach (preserved for reference)
+│
+└── scripts/
+    └── cleanup.sh                     # Tears down any method for redeployment
+```
+
+## Related
+
+- [cots-gitops-patterns](https://github.com/ultraJeff/cots-gitops-patterns) — broader
+  collection of patterns for deploying COTS apps on OpenShift with ArgoCD, including
+  strategic merge, JSON Patch, and app-of-apps approaches
