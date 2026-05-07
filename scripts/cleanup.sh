@@ -16,6 +16,9 @@ oc delete application cots-ocp-overrides -n openshift-gitops --ignore-not-found
 # Method 2: Kustomize + JSON Patch
 oc delete application cots-platform-kustomize -n openshift-gitops --ignore-not-found
 
+# Method 3: Helm with Kustomize JSON Patch
+oc delete application cots-platform-helm-kustomize -n openshift-gitops --ignore-not-found
+
 echo ""
 echo "==> Waiting for child Applications to be cleaned up..."
 sleep 5
@@ -49,3 +52,6 @@ echo "    oc apply -f gitops/root/appofapps.yaml"
 echo ""
 echo "  Method 2 — Kustomize + JSON Patch (single ArgoCD Application, no Kyverno):"
 echo "    oc apply -f gitops/kustomize-jsonpatch/argocd-application.yaml"
+echo ""
+echo "  Method 3 — Helm with Kustomize JSON Patch (multi-source, vendor topology preserved):"
+echo "    oc apply -f gitops/helm-with-kustomize-jsonpatch/argocd-application.yaml"

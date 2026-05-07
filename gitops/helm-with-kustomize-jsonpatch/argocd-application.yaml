@@ -1,0 +1,37 @@
+# Deployment Method 3: Helm with Kustomize JSON Patch (multi-source)
+#
+# The vendor's parent Helm chart is the primary source. A Kustomize overlay
+# patches the rendered Application CRs to redirect each child app's source
+# to our child-overlays, where Kustomize renders the child charts with
+# JSON Patch applied. No Kyverno needed, vendor topology preserved.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cots-platform-helm-kustomize
+  namespace: openshift-gitops
+spec:
+  project: default
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: openshift-gitops
+
+  sources:
+    # Source 1: Vendor's parent Helm chart
+    - repoURL: https://github.com/ultraJeff/cots-override-demo.git
+      targetRevision: main
+      path: fake-cots-charts/cots-platform
+      helm:
+        releaseName: cots
+
+    # Source 2: Kustomize overlay that patches the rendered Application CRs
+    - repoURL: https://github.com/ultraJeff/cots-override-demo.git
+      targetRevision: main
+      ref: repo
+      path: gitops/helm-with-kustomize-jsonpatch/overlays/ocp
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

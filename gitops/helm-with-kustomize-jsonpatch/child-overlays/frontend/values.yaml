@@ -1,0 +1,5 @@
+replicaCount: 1
+image:
+  repository: nginxinc/nginx-unprivileged
+  tag: latest
+  pullPolicy: Always

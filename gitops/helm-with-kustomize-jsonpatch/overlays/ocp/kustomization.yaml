@@ -1,0 +1,33 @@
+# Patches the Application CRs rendered by the vendor's parent Helm chart.
+# Changes each child app's source path to point at our Kustomize overlay
+# instead of the raw chart, so the child charts get JSON-patched too.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+patches:
+  # Redirect frontend app to our overlay
+  - target:
+      kind: Application
+      name: cots-frontend
+    patch: |
+      - op: replace
+        path: /spec/source/path
+        value: gitops/helm-with-kustomize-jsonpatch/child-overlays/frontend
+
+  # Redirect API app to our overlay
+  - target:
+      kind: Application
+      name: cots-api
+    patch: |
+      - op: replace
+        path: /spec/source/path
+        value: gitops/helm-with-kustomize-jsonpatch/child-overlays/api
+
+  # Redirect worker app to our overlay
+  - target:
+      kind: Application
+      name: cots-worker
+    patch: |
+      - op: replace
+        path: /spec/source/path
+        value: gitops/helm-with-kustomize-jsonpatch/child-overlays/worker
