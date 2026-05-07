@@ -153,6 +153,27 @@ oc apply -f gitops/root/appofapps.yaml
 ### Clean up
 
 ```bash
-oc delete application cots-platform-root -n openshift-gitops
-oc delete clusterpolicy mutate-cots-platform-security
+./scripts/cleanup.sh
 ```
+
+## Related: Kustomize with JSON Patch (single-chart scenario)
+
+If your COTS app is a single Helm chart (not an app-of-apps that renders child
+Applications), you don't need Kyverno. Kustomize can apply JSON Patch directly
+to Helm-rendered output before ArgoCD applies it.
+
+See [Approach 4: Kustomize with Helm + JSON Patch](https://github.com/ultraJeff/cots-gitops-patterns/tree/main/kustomize-with-helm-jsonpatch)
+in the `cots-gitops-patterns` repo for this pattern.
+
+The key insight is the same: **strategic merge patches can't remove fields** like
+`runAsUser: 0` or `capabilities.add`. JSON Patch (RFC 6902) `replace` and `remove`
+operations can. The difference is where the patch runs:
+
+| Scenario | Tool | When patch runs |
+|---|---|---|
+| Single Helm chart, Kustomize renders it | Kustomize `patchesJson6902` | Before ArgoCD applies to cluster |
+| App-of-apps, vendor chart creates child Applications | Kyverno ClusterPolicy | At admission, when each Deployment is created |
+
+Both use JSON Patch. Kustomize is simpler when you can use it. Kyverno is needed
+when you can't — like when the vendor's parent chart creates ArgoCD Applications
+that independently deploy child charts, and you have no Kustomize layer in between.
